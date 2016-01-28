@@ -102,7 +102,6 @@ Usage: $(basename $0) [-c] [-s <FQDN>] [-b] [-t] [-d]
   -c     Specify the absolute path to a custom config file
   -s     FQDN of the server you wish to build BIND configs for
   -b     Enable batch mode (less verbose logging for scripted runs)
-  -t     Enable download of domain specific footers from a web server
   -d     Enable debug output
 "
 
@@ -149,74 +148,86 @@ function MAIL_ALERT {
     exit 1
 }
 
-# Check if the $ONA_PATH directory exists
-if ! test -d $ONA_PATH/zone_data
+# Get the list of views
+if ! VIEW_LIST=`$DCM_PATH -r build_bind_view_list`
 then
-    ONA_LOG "ERROR => Unable to find directory '${ONA_PATH}/zone_data', please create it."
+    ONA_LOG "ERROR => Unable to determine view list for server named $SRV_FQDN."
     MAIL_ALERT
 fi
 
-# Check if $FOOTER_PATH directory exists
-if ! test -d $FOOTER_PATH
-then
-    ONA_LOG "ERROR => Unable to find directory '${FOOTER_PATH}', please create it."
-    MAIL_ALERT
-fi
+# Check that $ONA_PATH directory exists
+for VIEW in `echo $VIEW_LIST`
+do
+    if ! test -d $ONA_PATH/$VIEW/zone_data
+    then
+        ONA_LOG "ERROR => Unable to find directory '${ONA_PATH}/${VIEW}/zone_data', please create it."
+        MAIL_ALERT
+    fi
+done
 
 [ $BATCHMODE ] || ONA_LOG "INFO => Building BIND DNS config for ${SRV_FQDN}..."
 
 # Lets get a list of domains for this server from the database
 #DOMAIN_LIST=$($DCM_PATH -r build_bind_server_domain_list server=$SRV_FQDN) || abend "Unable to determine domain list for server named $SRV_FQDN."
 if ! DOMAIN_LIST=$($DCM_PATH -r build_bind_server_domain_list server=$SRV_FQDN)
-then 
+then
     ONA_LOG "ERROR => Unable to determine domain list for server named ${SRV_FQDN}."
     MAIL_ALERT
 fi
 
-# build the named.conf.ona file
+# build the named.conf.ona.VIEW file
 # Note, I cut the first / off due to the DCM issue with paths
-if ! $DCM_PATH -r build_bind_conf path=$(echo $ONA_PATH|cut -c2-60)/zone_data server=$SRV_FQDN > $ONA_PATH/named.conf.ona
+for VIEW in `echo $VIEW_LIST`
+do
+    if ! $DCM_PATH -r build_bind_conf path=`echo $ONA_PATH|cut -c2-60`/$VIEW/zone_data server=$SRV_FQDN > $ONA_PATH/named.conf.ona.$VIEW
+    then
+        ONA_LOG "ERROR => Unable to build bind config file."
+        MAIL_ALERT
+    fi
+done
+
+# loop through views
+for VIEW in `echo $VIEW_LIST`
+do
+    # loop through our domains and build the zonefile
+    for DOMAIN in `echo $DOMAIN_LIST`
+    do
+        if ! $DCM_PATH -r build_bind_domain domain=$DOMAIN view=${VIEW,,} > $ONA_PATH/$VIEW/zone_data/named-$DOMAIN
+        then
+                ONA_LOG "ERROR => Unable to build zonefile($VIEW): named-$DOMAIN."
+            MAIL_ALERT
+        else
+            if test -r $ONA_PATH/$VIEW/zone_data/named-$DOMAIN-footer
+            then
+                echo "\$INCLUDE $ONA_PATH/$VIEW/zone_data/named-$DOMAIN-footer" >> $ONA_PATH/$VIEW/zone_data/named-$DOMAIN
+            fi
+        fi
+    done
+done
+
+# ALL zones
+# build the named.conf.ona.ALL file
+# Note, I cut the first / off due to the DCM issue with paths
+if ! $DCM_PATH -r build_bind_conf path=`echo $ONA_PATH|cut -c2-60`/ALL/zone_data server=$SRV_FQDN > $ONA_PATH/named.conf.ona.ALL
 then
     ONA_LOG "ERROR => Unable to build bind config file."
     MAIL_ALERT
 fi
 
-# loop through list of domains and build the zone file
-for DOMAIN in $(echo $DOMAIN_LIST)
+# loop through our domains and build the zonefile
+for DOMAIN in `echo $DOMAIN_LIST`
 do
-    if ! $DCM_PATH -r build_bind_domain domain=$DOMAIN > $ONA_PATH/zone_data/named-$DOMAIN 
+    if ! $DCM_PATH -r build_bind_domain domain=$DOMAIN > $ONA_PATH/ALL/zone_data/named-$DOMAIN
     then
-        ONA_LOG "ERROR => Unable to build zonefile: named-${DOMAIN}."
+        ONA_LOG "ERROR => Unable to build zonefile(ALL): named-$DOMAIN."
         MAIL_ALERT
+    else
+        if test -r $ONA_PATH/ALL/zone_data/named-$DOMAIN-footer
+        then
+             echo "\$INCLUDE $ONA_PATH/ALL/zone_data/named-$DOMAIN-footer" >> $ONA_PATH/ALL/zone_data/named-$DOMAIN
+        fi
     fi
 done
-
-# check if fetching remote footers was requested
-if [ -n "${FOOTERS}" ]
-then
-
-[ $BATCHMODE ] || ONA_LOG "INFO => Scanning for footers on remote server ..."
-
-# create a folder used to temporarily store the footers
-FOOTER_TMPDIR="$(mktemp -d)"
-
-# loop through list of domains and attach remote footers to local zone files
-for DOMAIN in $(echo $DOMAIN_LIST)
-do
-    $CURL_PATH -s --fail --output "${FOOTER_TMPDIR}/${DOMAIN}.footer" "${FOOTER_URL}/${DOMAIN}.footer"
-    if [ $? == 0 ]
-	then
-	ONA_LOG "INFO => Found a match for zone ${DOMAIN}.. appending."
-	# attach footer to local zone file
-	cat $FOOTER_TMPDIR/$DOMAIN.footer >> $ONA_PATH/zone_data/named-$DOMAIN
-    fi
-done
-
-# safely remove footers and temp folder
-rm -rf ${FOOTER_TMPDIR}/*footer
-rmdir ${FOOTER_TMPDIR}
-
-fi
 
 [ $BATCHMODE ] || ONA_LOG "INFO => Testing new config files for SYNTAX only..."
 
@@ -234,7 +245,7 @@ fi
 # though for now I'm rebuilding all the zones anyway.
 #
 # Or a simple /etc/init.d/bind9 reload would work
-if ! $SYSTEMINIT
+if ! eval $SYSTEMINIT
 then
     ONA_LOG "ERROR => Unable to reload the named daemon using the command ${SYSTEMINIT}."
     MAIL_ALERT

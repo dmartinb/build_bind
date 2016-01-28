@@ -1,0 +1,12 @@
+#!/bin/bash
+ONA_PATH="${ONABASE}/etc/bind"
+SRV_FQDN=$(hostname -f)
+DCM_PATH="${ONABASE}/bin/dcm.pl"
+CURL_PATH="/usr/bin/curl"
+FOOTER_PATH="${ONA_PATH}/footer"
+#FOOTER_URL="https://USER:PASSWORD@ona.domain.tld/zone_footers" # no trailing slash
+CHECKCOMMAND="named-checkconf -z"
+SYSTEMINIT="/usr/sbin/rndc reconfig && /usr/sbin/rndc reload"
+MAIL_SERVER=localhost
+MAIL_FROM=root@${SRV_FQDN}
+MAIL_TO=

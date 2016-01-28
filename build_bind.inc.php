@@ -302,7 +302,7 @@ function build_bind_domain($options="") {
     global $conf, $self, $onadb;
 
     // Version - UPDATE on every edit!
-    $version = '1.50';
+    $version = '1.51';
 
     printmsg("DEBUG => build_bind_domain({$options}) called", 3);
 
@@ -349,9 +349,15 @@ EOF
     $q="
     SELECT  *
     FROM    dns
-    WHERE   domain_id = {$domain['id']}
-    ORDER BY type";
+    WHERE   domain_id = {$domain['id']}";
 
+    if (isset($options['view']))
+        $q .= " AND dns_view_id = (
+        SELECT id
+        FROM dns_views
+        WHERE name = '{$options['view']}')";
+
+    $q .= " ORDER BY type";
 
     // exectue the query
     $rs = $onadb->Execute($q);
@@ -531,7 +537,7 @@ EOF
 
 ////////////// Footer stuff //////////////////
 
-    // MP: FIXME: For now I"m not using this.. bind errors out if the file doesnt exist.  need a deterministic way to do this.   
+    // MP: FIXME: For now I"m not using this.. bind errors out if the file doesnt exist.  need a deterministic way to do this.
     // Allow for a local footer include.. I expect this to rarely be used
 //    $text .= "\n; Allow for a local footer include.. I expect this to rarely be used.\n";
 //    $text .= "\$INCLUDE named-{$domain['fqdn']}-footer\n";
@@ -543,6 +549,76 @@ EOF
     return(array(0, $text));
 
 
+}
+
+
+
+
+///////////////////////////////////////////////////////////////////////
+//  Function: build_bind_view_list (string $options='')
+//
+//  Input Options:
+//    $options = key=value pairs of options for this function.
+//               multiple sets of key=value pairs should be separated
+//               by an "&" symbol.
+//
+//  Output:
+//    Returns a two part list:
+//      1. The exit status of the function (0 on success, non-zero on error)
+//      2. A textual message for display on the console or web interface.
+//
+//  Example: list($status, $result) = build_bind_view_list('server=test');
+//
+//  Exit codes:
+//    0  :: No error
+//    1  :: Help text printed - Insufficient or invalid input received
+//
+//
+//
+///////////////////////////////////////////////////////////////////////
+function build_bind_view_list($options="") {
+
+    // The important globals
+    global $conf, $self, $onadb;
+
+    // Version - UPDATE on every edit!
+    $version = '1.00';
+
+    printmsg("DEBUG => build_bind_view_list({$options}) called", 3);
+
+    // Parse incoming options string to an array
+    $options = parse_options($options);
+
+    // Return the usage summary if we need to
+    if ($options['help']) {
+        // NOTE: Help message lines should not exceed 80 characters for proper display on a console
+        $self['error'] = 'ERROR => Insufficient parameters';
+        return(array(1,
+<<<EOF
+
+build_bind_view_list-v{$version}
+Returns a list of views.
+
+  Synopsis: build_bind_view_list [KEY=VALUE] ...
+
+  Required:
+
+  Notes:
+\n
+EOF
+
+        ));
+    }
+
+    // Find ALL views
+    list($status, $rows, $records) = db_get_records($onadb, 'dns_views', 'id >= 0', '');
+
+    foreach ($records as $view) {
+        $text .= $view['name'] . "\n";
+    }
+
+    // Return the list
+    return(array(0, $text));
 }
 
 
