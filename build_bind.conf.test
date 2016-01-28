@@ -1,6 +1,6 @@
 #!/bin/bash
 ONA_PATH="${ONABASE}/etc/bind"
-SRV_FQDN=$(hostname -f)
+# SRV_FQDN=$(hostname -f)
 DCM_PATH="${ONABASE}/bin/dcm.pl"
 CURL_PATH="/usr/bin/curl"
 FOOTER_PATH="${ONA_PATH}/footer"

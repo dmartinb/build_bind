@@ -105,7 +105,7 @@ Usage: $(basename $0) [-c] [-s <FQDN>] [-b] [-t] [-d]
   -d     Enable debug output
 "
 
-while getopts "c:sbtd" options; do
+while getopts "c:s:btd" options; do
   case $options in
     c ) LOCALCONF=$OPTARG;;
     s ) SRV_FQDN=$OPTARG;;
